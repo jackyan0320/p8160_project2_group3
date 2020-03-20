@@ -170,33 +170,28 @@ coef.glmnet(logmod)
 
 ```
 
-```{r}
-
-```
-
-
 
 ```{r}
 path <- function(data,lambdas){
   start <- rep(0, 31)
   betas <- NULL
   for (x in 1:30) {
-  coor.result <- coordlasso(lambda = lambdas[x],
+  coor_result <- coordlasso(lambda = lambdas[x],
                            dat = data,
                            start= start)
-  curbeta <- coor.result[nrow(coor.result),3:dim(coor.result)[2]]
+  curbeta <- coor_result[nrow(coor.result),3:dim(coor.result)[2]]
   start <- curbeta
   betas <- rbind(betas,c(curbeta))
   }
   return(data.frame(cbind(lambdas,betas)))
 }
 
-path.out <- path(cancer_ls,lambdas = exp(seq(-8e-1,-8, length=30)))
-colnames(path.out) <- c("lambdas","intercept", colnames(cancer_ls$x))
+path_sol <- path(cancer_ls,lambdas = exp(seq(-8e-1,-8, length=30)))
+colnames(path_sol) <- c("lambdas","intercept", colnames(cancer_ls$x))
 
 
 # plot a path of solutions
-path.plot <- path.out %>%
+path_plot <- path_sol %>%
   pivot_longer(
     3:32,
     names_to = "meansures",
