@@ -12,10 +12,11 @@ library(psycho)
 library(pracma)
 library(MASS)
 library(glmnet)
+set.seed(123)
 ```
 
 ```{r data}
-breast_cancer <- data.frame(read_csv("project 2/breast-cancer.csv")[,-33])
+breast_cancer <- data.frame(read_csv("breast-cancer.csv")[,-33])
 
 cancer = breast_cancer %>% 
   mutate(diagnosis = recode(diagnosis, "M" = 1, "B" = 0))
@@ -27,8 +28,7 @@ cancer_ls = list(x = x, y = cancer$diagnosis)
 
 
 ```{r loglikelyhood}
-dat = cancer_ls
-betavec = rep(0, 31)
+
 logisticstuff <- function(dat, betavec){
   x<- dat$x
   xm <- cbind(rep(1, nrow(x)), scale(x)) # standardize the data
@@ -38,7 +38,7 @@ logisticstuff <- function(dat, betavec){
   loglik_temp <- matrix()
   p <- matrix()
   
-  for(j in 1:569){
+  for(j in 1:nrow(xm)){
     loglik_temp[j] <- ifelse(u[j] > 10, sum(dat$y[j] * u[j]  - u[j]), sum(dat$y[j] * u[j]  - log(1 + expu[j])))
     p[j] <- ifelse(u[j] > 10, 1, expu[j] / (1 + expu[j]))
   j <- j+1
@@ -48,7 +48,7 @@ logisticstuff <- function(dat, betavec){
   grad <- matrix(colSums(xm * as.vector(dat$y - p))) # gradient at betavec
   Hess <- 0
   i = 1 
-  for (i in 1:569) {
+  for (i in 1:nrow(xm)) {
     tt <- xm[i,]
     dd <- t(tt)
     Hess <- Hess - tt %*% dd * p[i] * (1 - p[i])
@@ -60,7 +60,6 @@ logisticstuff <- function(dat, betavec){
 
 
 ```{r modified}
-func = logisticstuff
 
 NewtonRaphson <- function(dat, func, start, tol=1e-10, maxiter = 20000) {
   i <- 0
@@ -75,9 +74,11 @@ NewtonRaphson <- function(dat, func, start, tol=1e-10, maxiter = 20000) {
     cur <- prev - ginv(stuff$Hess, 2.34406e-18) %*% stuff$grad
     prevstuff <- stuff
     stuff <- func(dat, cur)        # log-lik, gradient, Hessian
+    gamma <- 0.01
     
     while(max(eigen(stuff$Hess)$value)>0){
-      stuff$Hess = stuff$Hess - diag(31)*1
+      stuff$Hess = stuff$Hess - diag(31) * gamma
+      gamma <- gamma + 0.01
     }
     
     if (stuff$loglik > prevloglik)
@@ -101,12 +102,12 @@ NewtonRaphson <- function(dat, func, start, tol=1e-10, maxiter = 20000) {
 
 
 ```{r}
-NewRes = NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(0, 31))
-
+NewRes <- NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(0, 31))
+NewRes
 #res1 = NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(1, 31))
 
 check <- tail(NewRes)[,1:2]
-
+check
 ```
 
 
@@ -127,12 +128,12 @@ Sfunc <- function(beta,lambda) {
 }
 
 
-coordlasso <- function(lambda, dat, start, tol=1e-10, maxiter = 200){
-  x<- dat$x
+coordlasso <- function(lambda, data_ls, start, tol=1e-10, maxiter = 200){
+  x<- data_ls$x
   xm <- cbind(rep(1, nrow(x)), scale(x)) # standardize the data
   i <- 0 
   pp <- length(start)
-  n <- length(dat$y)
+  n <- length(data_ls$y)
   betavec <- start
   loglik <- 0
   res <- c(0, loglik, betavec)
@@ -147,7 +148,7 @@ coordlasso <- function(lambda, dat, start, tol=1e-10, maxiter = 200){
       w <- prob * (1 - prob) # weights
       # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
       w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
-      z <- u + (dat$y - prob) / w
+      z <- u + (data_ls$y - prob) / w
       # calculate noj
       z_j <- xm[,-j] %*% betavec[-j]
       betavec[j] <- Sfunc(sum(w * (xm[,j]) * (z - z_j)), lambda) / (sum(w * xm[,j] * xm[,j]))
@@ -160,7 +161,8 @@ coordlasso <- function(lambda, dat, start, tol=1e-10, maxiter = 200){
 
 
 ```{r}
-CorRes <- coordlasso(lambda = exp(-8e-1), cancer_ls, start = rep(0, 31) ,maxiter = 2000)
+CorRes <- coordlasso(lambda = exp(0.01084406), cancer_ls, start = rep(0, 31) ,maxiter = 2000)
+CorRes
 
 
 
@@ -171,22 +173,22 @@ coef.glmnet(logmod)
 ```
 
 
-```{r}
-path <- function(data,lambdas){
+```{r path of solution}
+path <- function(data_ls,lambdas){
   start <- rep(0, 31)
   betas <- NULL
-  for (x in 1:30) {
+  for (x in 1:length(lambdas)) {
   coor_result <- coordlasso(lambda = lambdas[x],
-                           dat = data,
-                           start= start)
-  curbeta <- coor_result[nrow(coor.result),3:dim(coor.result)[2]]
+                            data_ls = data_ls,
+                            start= start)
+  curbeta <- coor_result[nrow(coor_result),3:dim(coor_result)[2]]
   start <- curbeta
   betas <- rbind(betas,c(curbeta))
   }
   return(data.frame(cbind(lambdas,betas)))
 }
 
-path_sol <- path(cancer_ls,lambdas = exp(seq(-8e-1,-8, length=30)))
+path_sol <- path(cancer_ls,lambdas = exp(seq(4,-4, length=30)))
 colnames(path_sol) <- c("lambdas","intercept", colnames(cancer_ls$x))
 
 
@@ -205,7 +207,122 @@ path_plot <- path_sol %>%
   ylab("Values") +
   theme(legend.position = "bottom", 
         legend.text = element_text(size = 6))
-path.plot + scale_x_reverse()
+path_plot + scale_x_reverse()
 
 
 ```
+
+
+
+```{r}
+# data manipulaiton
+data_ma <- function(data){
+  data_ls = list(x = data[,3:32], y = data$diagnosis)
+  x = sapply(data_ls$x, function(x) as.numeric(unlist(x)))
+  data_ls = list(x = x, y = data$diagnosis)
+  return(data_ls)
+}
+
+#Randomly shuffle the data
+
+cv <- function(org_data, lambdas, K){ #original data
+  org_data <- org_data[sample(nrow(org_data)),]
+  #Create K equally size folds
+  folds <- cut(seq(1,nrow(org_data)),breaks = K,labels = FALSE)
+  cv_error <- vector()
+  cv_se <- vector()
+  #Perform 10 fold cross validation
+  for (j in 1:length(lambdas)) {
+  cv_errors <- vector()
+  for(i in 1:K){
+    start <- rep(0, 31)
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds == i, arr.ind = TRUE)
+    testData <- data_ma(org_data[testIndexes, ])
+    xt <- cbind(rep(1, nrow(testData$x)), scale(testData$x)) # standardize the data
+    testData <- list(x = xt, y = testData$y)
+
+    trainData <- data_ma(org_data[-testIndexes, ])
+    coor_result <- coordlasso(lambda = lambdas[j],
+                              data_ls = trainData,
+                              start= start)
+    curbeta <- coor_result[nrow(coor_result),3:dim(coor_result)[2]]
+    u <- as.matrix(testData$x) %*% curbeta
+    expu <- exp(u) 
+    prob <- expu / (1 + expu) 
+    cv_errors[i] = mean((testData$y-prob)^2) #MSE
+  }
+  cv_error[j] <- mean(cv_errors)
+  cv_se[j] <- sqrt(var(cv_errors)/K)
+  }
+  return(cbind(lambdas, cv_error, cv_se))
+}
+
+cv_res <- cv(org_data = cancer, lambdas = exp(seq(4,-4, length=30)), K = 5)
+
+```
+
+
+```{r}
+best_lambda <- cv_res[which.min(cv_res[,2]),1]
+cv_res <- data.frame(cv_res)
+cv_res %>% 
+  filter(lambdas == best_lambda)
+
+cv_res %>% 
+    ggplot(aes(x = log(lambdas), y=cv_error)) + 
+    geom_errorbar(aes(ymin = cv_error - cv_se, ymax=cv_error + cv_se),
+                  colour = 1) +
+    geom_line() +
+    geom_point(size = 0.8, colour = 4) +
+    ggtitle("Figure 3: Lasso regression by 5 fold cross validation")+
+    xlab("log(Lambda)") + ylab("MSE") +
+    geom_vline(xintercept = log(best_lambda),col=3,lty=3) +
+    annotate("text", log(best_lambda), 0.05, label = paste("best log(lambda) = ", round(log(best_lambda), 3), sep = ""))
+
+```
+
+```{r}
+
+cv_New <- function(org_data, func, K){ #original data
+  org_data <- org_data[sample(nrow(org_data)),]
+  #Create K equally size folds
+  folds <- cut(seq(1,nrow(org_data)),breaks = K,labels = FALSE)
+  cv_errors <- vector()
+  #Perform 10 fold cross validation
+  for(i in 1:K){
+    start <- rep(0, 31)
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds == i, arr.ind = TRUE)
+    testData <- data_ma(org_data[testIndexes, ])
+    xt <- cbind(rep(1, nrow(testData$x)), scale(testData$x)) # standardize the data
+    testData <- list(x = xt, y = testData$y)
+    trainData <- data_ma(org_data[-testIndexes, ])
+    
+    New_result <- NewtonRaphson(dat = trainData,
+                                 func = func,
+                                 start= start)
+    curbeta <- New_result[nrow(New_result),3:dim(New_result)[2]]
+    u <- as.matrix(testData$x) %*% curbeta
+    prob <- vector()
+    for(j in 1:nrow(testData$x)){
+    prob[j] <- ifelse(u[j] > 10, 1, exp(u[j]) / (1 + exp(u[j])))
+    j <- j+1
+    }
+    
+    cv_errors[i] = mean((testData$y-prob)^2) #MSE
+  }
+  cv_error <- mean(cv_errors)
+  cv_se <- sqrt(var(cv_errors)/K)
+  
+  return(cbind(cv_error, cv_se))
+}
+ cv_new_res <- cv_New(org_data = cancer, func = logisticstuff, K =5)
+ cv_new_res
+```
+
+```{r}
+
+exp(-6.036)
+```
+
