@@ -12,6 +12,9 @@ library(psycho)
 library(pracma)
 library(MASS)
 library(glmnet)
+library(cvAUC)
+
+
 set.seed(123)
 ```
 
@@ -229,7 +232,7 @@ cv <- function(org_data, lambdas, K){ #original data
   org_data <- org_data[sample(nrow(org_data)),]
   #Create K equally size folds
   folds <- cut(seq(1,nrow(org_data)),breaks = K,labels = FALSE)
-  cv_error <- vector()
+  cv_AUC <- vector()
   cv_se <- vector()
   #Perform 10 fold cross validation
   for (j in 1:length(lambdas)) {
@@ -250,40 +253,41 @@ cv <- function(org_data, lambdas, K){ #original data
     u <- as.matrix(testData$x) %*% curbeta
     expu <- exp(u) 
     prob <- expu / (1 + expu) 
-    cv_errors[i] = mean((testData$y-prob)^2) #MSE
+    cv_errors[i] = AUC(prob, testData$y) #MSE
   }
-  cv_error[j] <- mean(cv_errors)
+  cv_AUC[j] <- mean(cv_errors)
   cv_se[j] <- sqrt(var(cv_errors)/K)
   }
-  return(cbind(lambdas, cv_error, cv_se))
+  return(cbind(lambdas, cv_AUC, cv_se))
 }
 
+set.seed(123)
 cv_res <- cv(org_data = cancer, lambdas = exp(seq(4,-4, length=30)), K = 5)
 
 ```
 
 
 ```{r}
-best_lambda <- cv_res[which.min(cv_res[,2]),1]
+best_lambda <- cv_res[which.max(cv_res[,2]),1]
 cv_res <- data.frame(cv_res)
 cv_res %>% 
   filter(lambdas == best_lambda)
 
 cv_res %>% 
-    ggplot(aes(x = log(lambdas), y=cv_error)) + 
-    geom_errorbar(aes(ymin = cv_error - cv_se, ymax=cv_error + cv_se),
+    ggplot(aes(x = log(lambdas), y=cv_AUC)) + 
+    geom_errorbar(aes(ymin = cv_AUC - cv_se, ymax = cv_AUC + cv_se),
                   colour = 1) +
     geom_line() +
     geom_point(size = 0.8, colour = 4) +
-    ggtitle("Figure 3: Lasso regression by 5 fold cross validation")+
-    xlab("log(Lambda)") + ylab("MSE") +
+    ggtitle("Lasso regression by 5 fold cross validation")+
+    xlab("log(Lambda)") + ylab("AUC") +
     geom_vline(xintercept = log(best_lambda),col=3,lty=3) +
-    annotate("text", log(best_lambda), 0.05, label = paste("best log(lambda) = ", round(log(best_lambda), 3), sep = ""))
+    annotate("text", log(best_lambda), 1, label = paste("best log(lambda) = ", round(log(best_lambda), 3), sep = "")) + 
+  theme_bw()
 
 ```
 
 ```{r}
-
 cv_New <- function(org_data, func, K){ #original data
   org_data <- org_data[sample(nrow(org_data)),]
   #Create K equally size folds
@@ -310,19 +314,22 @@ cv_New <- function(org_data, func, K){ #original data
     j <- j+1
     }
     
-    cv_errors[i] = mean((testData$y-prob)^2) #MSE
+    cv_errors[i] = AUC(prob, testData$y) #AUC
   }
   cv_error <- mean(cv_errors)
   cv_se <- sqrt(var(cv_errors)/K)
   
   return(cbind(cv_error, cv_se))
 }
- cv_new_res <- cv_New(org_data = cancer, func = logisticstuff, K =5)
- cv_new_res
+
+set.seed(123)
+cv_new_res <- cv_New(org_data = cancer, func = logisticstuff, K =5)
+cv_new_res
 ```
 
 ```{r}
 
 exp(-6.036)
+
 ```
 
