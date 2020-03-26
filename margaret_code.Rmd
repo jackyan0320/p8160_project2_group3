@@ -1,0 +1,214 @@
+---
+title: "Project 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+require(survival)
+require(quantreg)
+require(glmnet)
+require(MASS)
+require(pROC)
+library(tidyverse)
+set.seed(2019)
+```
+
+Read in data
+
+```{r}
+
+data = read.csv("breast-cancer.csv")
+names(data)
+
+breastcancer_data = data%>%
+  select(-c("id", "X"))
+```
+
+```{r }
+
+glm(diagnosis ~ ., family = binomial("logit"), breastcancer_data, start = rep(1, 31))
+
+
+#loglikelihood, gradient, and hessian at alpha and beta
+main_function = function(Y, X, Beta) {
+  
+  prob = exp(X %*% Beta) / (1 + exp(X %*% Beta))
+  prob[is.nan(prob)] = 1
+  
+  loglik = t(Y) %*% prob + t(1 - Y)%*%(1 - prob) 
+  
+  #gradient 
+  grad = t(X) %*% (Y - prob)
+  
+  #hessian at alpha, beta
+  var = as.vector(prob*(1 - prob))
+  Hess = - t(X) %*% diag(var) %*% X 
+  
+  return(list(loglik = loglik, grad = grad, Hess = Hess))
+  
+  }
+
+#test log-lik, grad, hessian function
+#test1 = main_function(list(x = x, y = y), c(2,3)) 
+#test1
+
+
+#testing half step function 
+
+NewtonRaphson = function(data, main_function, start, tol = 1e-10, maxiter = 200) {
+  #convert data into matrix form
+  model_data = data%>%
+    select(-c("diagnosis"))
+  intercept = rep(1, dim(model_data)[1])
+  X = as.matrix(cbind(intercept, scale(model_data, scale = TRUE)))
+  #X = as.matrix(cbind(intercept, model_data))
+  Y = as.matrix(as.integer(data$diagnosis == "F"))
+  Beta = as.matrix(start, nrow = dim(model_data)[2] + 1)
+    
+  i = 0
+  cur = Beta
+  lik_grad_hess = main_function(Y, X, cur)
+  res = c(0, lik_grad_hess$loglik, cur)
+  step = 1
+  
+  prevloglik = -Inf # To make sure it iterates
+  
+  diff_loglik = abs(lik_grad_hess$loglik - prevloglik)
+  if (is.nan(diff_loglik)) { diff_loglik <- 1e-2 }
+  
+  while(i < maxiter && diff_loglik > tol) {
+    i = i + 1
+    
+    prevlik_grad_hess = lik_grad_hess #time step i - 1
+    prevloglik = prevlik_grad_hess$loglik
+    prev = cur #step i - 1
+
+    
+    #ensure that the direction of the step is in ascent direction
+    d_grad = - t(prevlik_grad_hess$grad) %*% ginv(prevlik_grad_hess$Hess, 2.9876e-18 ) %*% (prevlik_grad_hess$grad)
+    
+    if (d_grad > 0){
+      prevlik_grad_hess = prevlik_grad_hess
+    } else {
+      max_eig = max(eigen(prevlik_grad_hess$Hess)$values)
+      n = ncol(prevlik_grad_hess$Hess)
+      
+      prevlik_grad_hess$Hess = prevlik_grad_hess$Hess - (max_eig + 0.01)*diag(n)
+    }
+    
+    cur = prev - ginv(prevlik_grad_hess$Hess, 2.9876e-18) %*% prevlik_grad_hess$grad #step find theta for step i 
+    lik_grad_hess = main_function(Y, X, cur) #update log-lik, gradient, Hessian for step i 
+
+    if (lik_grad_hess$loglik >= prevloglik){
+      
+      res = rbind(res, c(i, lik_grad_hess$loglik, cur)) 
+      
+    } else {
+      while (lik_grad_hess$loglik < prevloglik) {
+        
+        step = 0.5*step
+        cur = prev - step * ginv(prevlik_grad_hess$Hess, 2.9876e-18) %*% prevlik_grad_hess$grad
+        lik_grad_hess = main_function(Y, X, cur)
+      }
+      res = rbind(res, c(i, lik_grad_hess$loglik, cur)) 
+    }
+    
+    diff_loglik = abs(lik_grad_hess$loglik - prevloglik)
+    if (is.nan(diff_loglik)) { diff_loglik <- 1e9 }
+    
+    }
+  
+  return(res)
+  
+  }
+
+path= NewtonRaphson(breastcancer_data, main_function, start = rep(0, dim(breastcancer_data)[2]))
+dim(path)
+```
+
+LASSO 
+
+```{r}
+
+s_function = function(beta, gamma) {
+  
+  if(abs(beta) - gamma > 0){
+    beta_lasso = sign(beta) * (abs(beta) - gamma)}
+  else {beta_lasso = 0}
+}
+
+logistic_lasso = function(data, beta, gamma, tol = 1e-10, maxiter = 2000) {
+  
+  model_data = data%>%
+    select(-c("diagnosis"))
+  
+  intercept = rep(1, dim(model_data)[1])
+  X = as.matrix(cbind(intercept, scale(model_data, scale = TRUE)))
+  Y = as.matrix(as.integer(data$diagnosis == "M"))
+  lasso_beta = as.matrix(beta)
+  
+  i = 0
+  m = ncol(model_data) + 1
+  n = nrow(model_data)
+  
+  diff_loglik = Inf # To make sure it iterates
+  loglik = 0
+  res = c(0, loglik, lasso_beta)
+  
+  while (i < maxiter && diff_loglik > tol) {
+    
+    i = i + 1
+    prevloglik = loglik
+    
+    j = 0
+    while (j < m) {
+      
+      j = j + 1
+      
+      y_j = X[ ,-j]%*%lasso_beta[-j]
+      
+      prob = exp(X%*%lasso_beta) / (1 + exp(X%*%lasso_beta))
+      prob[is.nan(prob)] = 1
+      
+      w = prob *(1 - prob)
+      w[(abs(w - 0) < 1e-5)] = 1e-5 
+      
+      z = X%*%lasso_beta + (Y - prob)/w
+      beta_j = sum(w * X[ , j] * (z - y_j))
+      lasso_beta[j] = s_function(beta_j, gamma)
+      #print(lasso_beta)
+
+    }
+    
+    loglik = - (1/2*n) * sum( w*(z - X%*%lasso_beta)^2 ) + gamma * sum(abs(lasso_beta))
+    diff_loglik = abs(prevloglik - loglik)
+    if (is.nan(diff_loglik)) { diff_loglik = 1e9 }
+
+    res = rbind(res, c(i, loglik, lasso_beta))
+  }
+  return(res)
+}
+
+
+path = logistic_lasso(check_data, beta = rep(1, 31), gamma = 0.01)
+dim(path)
+```
+
+other
+
+```{r}
+
+breast_cancer <- data.frame(read.csv("breast-cancer.csv")[,-33])
+cancer = breast_cancer %>% 
+  mutate(diagnosis = recode(diagnosis, "M" = 1, "B" = 0))
+cancer_ls = list(x = cancer[,3:32], y = cancer$diagnosis)
+x = sapply(cancer_ls$x, function(x) as.numeric(unlist(x)))
+cancer_ls = list(x = x, y = cancer$diagnosis)
+
+
+logmod <- glmnet(cancer_ls$x, y=cancer_ls$y, alpha=1, family="binomial",lambda = 0.01)
+coef.glmnet(logmod)
+```
+
