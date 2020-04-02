@@ -6,7 +6,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(psycho)
 library(pracma)
@@ -17,6 +17,122 @@ library(cvAUC)
 
 set.seed(123)
 ```
+
+
+# Method
+
+## Logistic Regression Model
+
+The logistics regression model is 
+
+$$
+\log(\frac{\pi}{1-\pi})=X\beta
+$$
+
+where the link function is $\log(\frac{\pi}{1-\pi})$.
+
+The likelihood function is 
+
+$$
+L(\beta ; X, y)=\prod_{i=1}^{n}\left\{\left(\frac{\exp \left(X_{i} \beta\right)}{1+\exp \left(X_{i} \beta\right)}\right)^{y_{i}}\left(\frac{1}{1+\exp \left(X_{i} \beta\right)}\right)^{1-y_{i}}\right\}
+$$
+where $y_i$ is the indicator of responses "M" or "B". 
+
+Consequently, the log-likelihood function is 
+
+$$
+l(\beta)=\sum_{i=1}^{n}\left\{y_{i}\left(X_{i} \beta\right)-\log \left(1+\exp \left(X_{i} \beta\right)\right)\right\}
+$$
+Maximizing log-likelihood function is equivalent to maximizing likelihood function, so the gradient and Hessian matrix will be 
+
+$$
+\nabla l\left(\boldsymbol{\beta}\right)=\left(\begin{array}{c}\sum_{i=1}^{n} y_{i}-p_{i} \\ \sum_{i=1}^{n} \mathbf{x}_{i}\left(y_{i}-p_{i}\right)\end{array}\right)_{(p+1) \times 1}
+$$
+, and 
+
+$$
+\begin{aligned} \nabla^{2} l\left(\boldsymbol{\beta}\right) &=-\sum_{i=1}^{n}\left(\begin{array}{c}1 \\ \mathbf{x}_{i}\end{array}\right)\left(\begin{array}{cc}1 & \mathbf{x}_{i}^{T}\end{array}\right) p_{i}\left(1-p_{i}\right) \\ &=-\left(\begin{array}{cc}\sum p_{i}\left(1-p_{i}\right) & \sum \mathbf{x}_{i}^{T} p_{i}\left(1-p_{i}\right) \\ \sum \mathbf{x}_{i} p_{i}\left(1-p_{i}\right) & \sum \mathbf{x}_{i} \mathbf{x}_{i}^{T} p_{i}\left(1-p_{i}\right)\end{array}\right) \end{aligned}
+$$
+where $p_{i}=P\left(Y_{i}=1 | \mathbf{x}_{i}\right)=\frac{\exp \left(\beta_{0}+\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)}{1+\exp \left(\beta_{0}+\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)}$.
+
+## Algorithms
+
+### Newton-Raphson Algorithm
+
+Newton-Raphson algorithm is a method to search for solutions to the system of equations $\nabla l\left(\boldsymbol{\beta}\right)=0$. At each step, given the current point $\boldsymbol{\beta}_0$, the gradient $\nabla l\left(\boldsymbol{\beta}\right)$ for $\boldsymbol{\beta}$ near $\boldsymbol{\beta}_0$ may be approximated by 
+
+$$
+\nabla l\left(\boldsymbol{\beta}_{0}\right)+\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\left(\boldsymbol{\beta}-\boldsymbol{\beta}_{0}\right)
+$$
+
+The next step in the algorithm is determined by solving the system of linear equations
+
+$$
+\nabla l\left(\boldsymbol{\beta}_{0}\right)+\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\left(\boldsymbol{\beta}-\boldsymbol{\beta}_{0}\right)=\mathbf{0}
+$$
+and the next “current point” is set to be the solution, which is
+
+$$
+\boldsymbol{\beta}_{1}=\boldsymbol{\beta}_{0}-\left[\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\right]^{-1} \nabla l\left(\boldsymbol{\beta}_{0}\right)
+$$
+
+The ith step is given by
+
+$$
+\boldsymbol{\beta}_{i}=\boldsymbol{\beta}_{i-1}-\left[\nabla^{2} l\left(\boldsymbol{\beta}_{i-1}\right)\right]^{-1} \nabla l\left(\boldsymbol{\beta}_{i-1}\right)
+$$
+
+### Pathwise Coordinate Descent with regularized logistic regression
+
+The logistic-lasso can be written as a penalized weighted least-squares problem
+
+$$
+\min _{\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)} L\left(\beta_{0}, \boldsymbol{\beta}_{1}, \lambda\right)=\left\{-\ell\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)+\lambda \sum_{j=0}^{p}\left|\beta_{j}\right|\right\}
+$$
+
+
+When the p, the number of parameters, is large, the optimization could be challenging. Therefore, a coordinate-wise descent algorithm will be applied. The objective function is
+
+$$
+f\left(\beta_{j}\right)=\frac{1}{2} \sum_{i=1}^{n}\left(y_{i}-\sum_{k \neq j} x_{i, k} \widetilde{\beta}_{k}-x_{i, j} \beta_{j}\right)^{2}+\gamma \sum_{k \neq j}\left|\widetilde{\beta}_{k}\right|+\gamma\left|\beta_{j}\right|
+$$
+
+Minimizing $f\left(\beta_{j}\right)$ w.r.t $\beta_{j}$ while having $\widetilde{\beta}_{k}$ fixed, we have weighted beta updates
+
+$$
+\widetilde{\beta}_{j}(\gamma) \leftarrow \frac{S\left(\sum_{i} w_{i} x_{i, j}\left(y_{i}-\tilde{y}_{i}^{(-j)}\right), \gamma\right)}{\sum_{i} w_{i} x_{i, j}^{2}}
+$$
+
+where $\tilde{y}_{i}^{(-j)}=\sum_{k \neq j} x_{i, k} \widetilde{\beta}_{k}$. 
+
+If we Taylor expansion the log-likelihood around “current estimates” $\left(\widetilde{\beta}_{0}, \tilde{\beta}_{1}\right)$, we have a quadratic approximation to the log-likelihood
+
+$$
+f\left(\beta_{0}, \boldsymbol{\beta}_{1}\right) \approx \ell\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)=-\frac{1}{2 n} \sum_{i=1}^{n} w_{i}\left(z_{i}-\beta_{0}-\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)^{2}+C\left(\widetilde{\beta}_{0}, \widetilde{\boldsymbol{\beta}}_{1}\right)
+$$
+where 
+$$
+z_{i}=\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}_{1}+\frac{y_{i}-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)}{\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\left(1-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\right)}
+$$
+
+
+$$
+w_{i}=\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\left(1-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\right)
+$$
+
+$$
+\widetilde{p}_{i}=\frac{\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}\right)}{1+\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}_{1}\right)}
+$$
+Therefore, the algorithms steps are
+
+Step 1. Find $\lambda_{max}$ such that all the estimatedβare zero;
+
+Step 2. Define a fine sequence $\lambda_{max}\ge\lambda_1\ge...\ge\lambda_{min}\ge0$;
+
+Step 3. Defined the quadratic approximated objective function $L\left(\beta_{0}, \boldsymbol{\beta}_{1}, \lambda\right)$ for $\lambda_k$ using the estimated parameter at $\lambda_{k-1}\;\left(\lambda_{k-1}>\lambda_{k}\right)$. 
+
+Step 4. Run coordinate descendent algorithm to find the optimizationdefined in Step 3
+
 
 ```{r data}
 breast_cancer <- data.frame(read_csv("breast-cancer.csv")[,-33])
@@ -109,7 +225,10 @@ NewRes <- NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(0, 31
 NewRes
 #res1 = NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(1, 31))
 
-check <- tail(NewRes)[,1:2]
+
+#glm(diagnosis ~ ., family = binomial("logit"), data  = cancer[, -1], start = rep(0, 31))
+
+check <- tail(NewRes)
 check
 ```
 
@@ -131,7 +250,7 @@ Sfunc <- function(beta,lambda) {
 }
 
 
-coordlasso <- function(lambda, data_ls, start, tol=1e-10, maxiter = 200){
+coordlasso <- function(lambda, data_ls, start, tol=1e-10, maxiter = 2000){
   x<- data_ls$x
   xm <- cbind(rep(1, nrow(x)), scale(x)) # standardize the data
   i <- 0 
@@ -164,15 +283,11 @@ coordlasso <- function(lambda, data_ls, start, tol=1e-10, maxiter = 200){
 
 
 ```{r}
-CorRes <- coordlasso(lambda = exp(0.01084406), cancer_ls, start = rep(0, 31) ,maxiter = 2000)
+CorRes <- coordlasso(lambda = 0.8, cancer_ls, start = rep(0, 31) ,maxiter = 2000)
 CorRes
 
-
-
-logmod <- glmnet(cancer_ls$x, y=cancer_ls$y, alpha=1, family="binomial",lambda = 1e-2)
-coef.glmnet(logmod)
-
-
+#logmod <- glmnet(cancer_ls$x, y=cancer_ls$y, alpha=1, family="binomial",lambda = 0.8)
+#coef.glmnet(logmod)
 ```
 
 
@@ -183,7 +298,8 @@ path <- function(data_ls,lambdas){
   for (x in 1:length(lambdas)) {
   coor_result <- coordlasso(lambda = lambdas[x],
                             data_ls = data_ls,
-                            start= start)
+                            start= start, 
+                            maxiter = 2000)
   curbeta <- coor_result[nrow(coor_result),3:dim(coor_result)[2]]
   start <- curbeta
   betas <- rbind(betas,c(curbeta))
@@ -191,7 +307,7 @@ path <- function(data_ls,lambdas){
   return(data.frame(cbind(lambdas,betas)))
 }
 
-path_sol <- path(cancer_ls,lambdas = exp(seq(4,-4, length=30)))
+path_sol <- path(cancer_ls,lambdas = exp(seq(4,-4, length=30))) # 5 min 
 colnames(path_sol) <- c("lambdas","intercept", colnames(cancer_ls$x))
 
 
@@ -262,7 +378,7 @@ cv <- function(org_data, lambdas, K){ #original data
 }
 
 set.seed(123)
-cv_res <- cv(org_data = cancer, lambdas = exp(seq(4,-4, length=30)), K = 5)
+cv_res <- cv(org_data = cancer, lambdas = exp(seq(4,-4, length=30)), K = 5) #15 min
 
 ```
 
@@ -332,4 +448,6 @@ cv_new_res
 exp(-6.036)
 
 ```
+
+
 
