@@ -1,0 +1,141 @@
+---
+title: "Breast Cancer Final Report"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+In this project, we build a model to classify breast tissue images into malignant cancer or benign tissue. We are interested in observing how the certain features for individual breast tissue are influential in determining cancer diagnosis. First, we built a full logistic model with all 30 features and utilized a Newton-Raphson algorithm in order to estimate the model coefficients. Furthermore, we built a logistic-lasso model to perform variable selection in order to identify the best subset of tissue characteristics that play a major role in prediction. 
+
+# Methods
+
+The dataset contains 569 individuals with 30 variables to help predict malignancy. The 30 variables correspond to mean, standard deviation, and largest value of 10 tissue characteristics, including, radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
+
+
+### Logistic Regression Model
+
+The logistic regression model can be defined as
+
+$$
+\log(\frac{\pi}{1-\pi})=X\beta
+$$
+
+where the link function is $\log(\frac{\pi}{1-\pi})$.
+
+The likelihood function is 
+
+$$
+L(\beta ; X, y)=\prod_{i=1}^{n}\left\{\left(\frac{\exp \left(X_{i} \beta\right)}{1+\exp \left(X_{i} \beta\right)}\right)^{y_{i}}\left(\frac{1}{1+\exp \left(X_{i} \beta\right)}\right)^{1-y_{i}}\right\}
+$$
+where $y_i \sim bin(1, \pi_i)$, $$y_i =
+    \begin{cases}
+      1, & malignant\ tissue \\
+      0, & benign\ tissue
+    \end{cases}$$ 
+    
+Consequently, the log-likelihood function is 
+
+$$
+l(\beta)=\sum_{i=1}^{n}\left\{y_{i}\left(X_{i} \beta\right)-\log \left(1+\exp \left(X_{i} \beta\right)\right)\right\}
+$$
+Maximizing log-likelihood function is equivalent to maximizing likelihood function, so the gradient and Hessian matrix will be 
+
+$$
+\nabla l\left(\boldsymbol{\beta}\right)=\left(\begin{array}{c}\sum_{i=1}^{n} y_{i}-p_{i} \\ \sum_{i=1}^{n} \mathbf{x}_{i}\left(y_{i}-p_{i}\right)\end{array}\right)_{(p+1) \times 1}
+$$
+and 
+
+$$
+\begin{aligned} \nabla^{2} l\left(\boldsymbol{\beta}\right) &=-\sum_{i=1}^{n}\left(\begin{array}{c}1 \\ \mathbf{x}_{i}\end{array}\right)\left(\begin{array}{cc}1 & \mathbf{x}_{i}^{T}\end{array}\right) p_{i}\left(1-p_{i}\right) \\ &=-\left(\begin{array}{cc}\sum p_{i}\left(1-p_{i}\right) & \sum \mathbf{x}_{i}^{T} p_{i}\left(1-p_{i}\right) \\ \sum \mathbf{x}_{i} p_{i}\left(1-p_{i}\right) & \sum \mathbf{x}_{i} \mathbf{x}_{i}^{T} p_{i}\left(1-p_{i}\right)\end{array}\right) \end{aligned}
+$$
+where $p_{i}=P\left(Y_{i}=1 | \mathbf{x}_{i}\right)=\frac{\exp \left(\beta_{0}+\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)}{1+\exp \left(\beta_{0}+\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)}$.
+
+With p = 30 predictors, we obtain a 31 $\times$ 1 gradient vector and 31 $\times$ 31 Hessian matrix
+
+$$\nabla l\ (\boldsymbol{\beta}) = \boldsymbol{X}^T (\boldsymbol{Y} - \boldsymbol{\pi}),\ 
+\boldsymbol{\pi} = \cfrac{e^{\boldsymbol{X\beta}}}{1 + e^{\boldsymbol{X\beta}}}$$ where $\boldsymbol{X}$ is the design matrix 
+
+$$ H = \boldsymbol{X}^T \boldsymbol{\Lambda} \boldsymbol{X}$$ where $\boldsymbol{\Lambda}$ is a diagonal matrix with $var(y_i),\ i = 1,...,n$ as the diagonal elements
+
+## Algorithms
+
+### Newton-Raphson Algorithm
+
+Newton-Raphson algorithm is a method to search for solutions to the system of equations $\nabla l\left(\boldsymbol{\beta}\right)=0$. At each step, given the current point $\boldsymbol{\beta}_0$, the gradient $\nabla l\left(\boldsymbol{\beta}\right)$ for $\boldsymbol{\beta}$ near $\boldsymbol{\beta}_0$ may be approximated by 
+
+$$
+\nabla l\left(\boldsymbol{\beta}_{0}\right)+\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\left(\boldsymbol{\beta}-\boldsymbol{\beta}_{0}\right)
+$$
+
+The next step in the algorithm is determined by solving the system of linear equations
+
+$$
+\nabla l\left(\boldsymbol{\beta}_{0}\right)+\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\left(\boldsymbol{\beta}-\boldsymbol{\beta}_{0}\right)=\mathbf{0}
+$$
+and the next “current point” is set to be the solution, which is
+
+$$
+\boldsymbol{\beta}_{1}=\boldsymbol{\beta}_{0}-\left[\nabla^{2} l\left(\boldsymbol{\beta}_{0}\right)\right]^{-1} \nabla l\left(\boldsymbol{\beta}_{0}\right)
+$$
+
+The ith step is given by
+
+$$
+\boldsymbol{\beta}_{i}=\boldsymbol{\beta}_{i-1}-\left[\nabla^{2} l\left(\boldsymbol{\beta}_{i-1}\right)\right]^{-1} \nabla l\left(\boldsymbol{\beta}_{i-1}\right)
+$$
+
+### Pathwise Coordinate Descent with regularized logistic regression
+
+The logistic-lasso can be written as a penalized weighted least-squares problem
+
+$$
+\min _{\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)} L\left(\beta_{0}, \boldsymbol{\beta}_{1}, \lambda\right)=\left\{-\ell\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)+\lambda \sum_{j=0}^{p}\left|\beta_{j}\right|\right\}
+$$
+
+
+When the p, the number of parameters, is large, the optimization could be challenging. Therefore, a coordinate-wise descent algorithm will be applied. The objective function is
+
+$$
+f\left(\beta_{j}\right)=\frac{1}{2} \sum_{i=1}^{n}\left(y_{i}-\sum_{k \neq j} x_{i, k} \widetilde{\beta}_{k}-x_{i, j} \beta_{j}\right)^{2}+\gamma \sum_{k \neq j}\left|\widetilde{\beta}_{k}\right|+\gamma\left|\beta_{j}\right|
+$$
+
+Minimizing $f\left(\beta_{j}\right)$ w.r.t $\beta_{j}$ while having $\widetilde{\beta}_{k}$ fixed, we have weighted beta updates
+
+$$
+\widetilde{\beta}_{j}(\gamma) \leftarrow \frac{S\left(\sum_{i} w_{i} x_{i, j}\left(y_{i}-\tilde{y}_{i}^{(-j)}\right), \gamma\right)}{\sum_{i} w_{i} x_{i, j}^{2}}
+$$
+
+where $\tilde{y}_{i}^{(-j)}=\sum_{k \neq j} x_{i, k} \widetilde{\beta}_{k}$. 
+
+If we Taylor expansion the log-likelihood around “current estimates” $\left(\widetilde{\beta}_{0}, \tilde{\beta}_{1}\right)$, we have a quadratic approximation to the log-likelihood
+
+$$
+f\left(\beta_{0}, \boldsymbol{\beta}_{1}\right) \approx \ell\left(\beta_{0}, \boldsymbol{\beta}_{1}\right)=-\frac{1}{2 n} \sum_{i=1}^{n} w_{i}\left(z_{i}-\beta_{0}-\mathbf{x}_{i}^{T} \boldsymbol{\beta}_{1}\right)^{2}+C\left(\widetilde{\beta}_{0}, \widetilde{\boldsymbol{\beta}}_{1}\right)
+$$
+where 
+$$
+z_{i}=\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}_{1}+\frac{y_{i}-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)}{\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\left(1-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\right)}
+$$
+
+
+$$
+w_{i}=\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\left(1-\widetilde{p}_{i}\left(\mathbf{x}_{i}\right)\right)
+$$
+
+$$
+\widetilde{p}_{i}=\frac{\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}\right)}{1+\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}_{1}\right)}
+$$
+Therefore, the algorithms steps are
+
+Step 1. Find $\lambda_{max}$ such that all the estimatedβare zero;
+
+Step 2. Define a fine sequence $\lambda_{max}\ge\lambda_1\ge...\ge\lambda_{min}\ge0$;
+
+Step 3. Defined the quadratic approximated objective function $L\left(\beta_{0}, \boldsymbol{\beta}_{1}, \lambda\right)$ for $\lambda_k$ using the estimated parameter at $\lambda_{k-1}\;\left(\lambda_{k-1}>\lambda_{k}\right)$. 
+
+Step 4. Run coordinate descendent algorithm to find the optimizationdefined in Step 3
+
