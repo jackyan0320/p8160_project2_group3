@@ -1,6 +1,7 @@
 ---
-title: "Breast Cancer Final Report"
-output: html_document
+title: "Breast Cancer Diagnosis using Optimization"
+author: "Margaret Gacheru, Alyssa Vanderbeek, Jack Yan, Mengyu Zhang"
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -9,12 +10,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Introduction
 
-In this project, we build a model to classify breast tissue images into malignant cancer or benign tissue. We are interested in observing how the certain features for individual breast tissue are influential in determining cancer diagnosis. First, we built a full logistic model with all 30 features and utilized a Newton-Raphson algorithm in order to estimate the model coefficients. Furthermore, we built a logistic-lasso model to perform variable selection in order to identify the best subset of tissue characteristics that play a major role in prediction. 
+In this project, we build a model to classify breast tissue images into malignant cancer or benign tissue. We are interested in observing how the certain features for individual breast tissue are influential in determining cancer diagnosis. Prediction algorithms are potentially useful in this area as a way to aid in the diagnosis of breast cancer. 
+
+Our data is taken from tissue imaging from 569 breast cancer patients. Our goal was to build a prediction algorithm from the 30 variables provided. First, we built a full logistic model with all 30 features and utilized a Newton-Raphson algorithm in order to estimate the model coefficients. Furthermore, we built a logistic-lasso model to perform variable selection in order to identify the best subset of tissue characteristics that play a major role in prediction. 
 
 # Methods
 
-The dataset contains 569 individuals with 30 variables to help predict malignancy. The 30 variables correspond to mean, standard deviation, and largest value of 10 tissue characteristics, including, radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
-
+The dataset contains 569 individuals with 30 variables describing the tissue images. These variables correspond to mean, standard deviation, and largest value of 10 tissue characteristics, including, radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, and fractal dimension.
 
 ### Logistic Regression Model
 
@@ -88,7 +90,7 @@ $$
 \boldsymbol{\beta}_{i}=\boldsymbol{\beta}_{i-1}-\left[\nabla^{2} l\left(\boldsymbol{\beta}_{i-1}\right)\right]^{-1} \nabla l\left(\boldsymbol{\beta}_{i-1}\right)
 $$
 
-### Pathwise Coordinate Descent with regularized logistic regression
+### Coordinate-wise descent with regularized logistic regression
 
 The logistic-lasso can be written as a penalized weighted least-squares problem
 
@@ -129,13 +131,18 @@ $$
 $$
 \widetilde{p}_{i}=\frac{\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}\right)}{1+\exp \left(\widetilde{\beta}_{0}+\mathbf{x}_{i}^{T} \widetilde{\boldsymbol{\beta}}_{1}\right)}
 $$
-Therefore, the algorithms steps are
 
-Step 1. Find $\lambda_{max}$ such that all the estimatedβare zero;
+Therefore, the algorithm's steps are
+
+Step 1. Find $\lambda_{max}$ such that all the estimated $\beta$ are zero;
 
 Step 2. Define a fine sequence $\lambda_{max}\ge\lambda_1\ge...\ge\lambda_{min}\ge0$;
 
 Step 3. Defined the quadratic approximated objective function $L\left(\beta_{0}, \boldsymbol{\beta}_{1}, \lambda\right)$ for $\lambda_k$ using the estimated parameter at $\lambda_{k-1}\;\left(\lambda_{k-1}>\lambda_{k}\right)$. 
 
-Step 4. Run coordinate descendent algorithm to find the optimizationdefined in Step 3
+Step 4. Run a coordinate-wise descendent algorithm to optimize the function defined in Step 3.
+
+## Results
+
+
 
