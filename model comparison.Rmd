@@ -1,0 +1,76 @@
+---
+title: "Comparison of full and optimal models"
+author: "Alyssa Vanderbeek"
+date: "4/14/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(caret)
+library(pROC)
+
+load(file.path(getwd(), "results.RData"))
+```
+
+
+```{r optimal_model}
+# Named vector of the optimal model's coefficients
+optimal = path_sol %>%
+  filter(.$lambda == best_lambda) %>%
+  unlist()
+optimal
+
+sum(optimal != 0) # number of non-zero variables = 16
+cv_new_res
+```
+
+The optimal model built using NR and Lasso logistic regression uses 16 predictors. The AUC of the model is 0.9396.
+
+
+```{r full model}
+bc_dat = breast_cancer %>%
+  dplyr::select(-id) %>%
+  mutate(diagnosis = as.factor(diagnosis))
+
+# Create train and test data sets
+set.seed(1)
+train_index = createDataPartition(bc_dat$diagnosis, p = 0.6, list = FALSE)
+train = bc_dat[train_index, ]
+test = bc_dat[-train_index, ]
+
+
+# define training control with 5-fold CV
+train_control <- trainControl(method = "cv", 
+                              number = 5, 
+                              classProbs = TRUE,
+                              summaryFunction = twoClassSummary)
+# fix the parameters of the algorithm
+grid <- expand.grid(.fL = c(0), .usekernel = c(FALSE))
+# train the model
+model <- train(diagnosis ~ ., 
+               data = train, 
+               trControl = train_control, 
+               family = "binomial",
+               metric = "ROC")
+# predict on the test data
+pred.prob = predict(model, newdata = test, type = "prob")
+pred <- rep("B", nrow(pred.prob))
+pred[pred.prob[, 2] > 0.5] <- "M" # using classifier 0.5
+
+# # confusion matrix of predictive performance
+# caret::confusionMatrix(data = as.factor(pred),
+#                        reference = test$diagnosis,
+#                        positive = "M")
+
+# Evaluation of performance based on AUC
+roc.response = ifelse(test$diagnosis == "B", 0, 1)
+roc.pred = ifelse(pred == "B", 0, 1)
+roc.val = pROC::roc(response = roc.response, predictor = roc.pred)
+roc.val$auc # AUC = 0.9597
+roc.val$sensitivities; roc.val$specificities
+```
+
+By contrast, the full model uses all 30 predictors and returns an AUC of 0.9597.
