@@ -20,8 +20,13 @@ load(file.path(getwd(), "results.RData"))
 # Named vector of the optimal model's coefficients
 optimal = path_sol %>%
   filter(.$lambda == best_lambda) %>%
+  dplyr::select(-lambdas) %>%
   unlist()
-optimal
+
+optimal[which(optimal != 0)] %>%
+  as.data.frame() %>%
+  knitr::kable(col.names = "LASSO-logistic coefficient",
+               caption = "Coefficient estimates for the 16 covariates selected by LASSO, using Newton-Raphson")
 
 sum(optimal != 0) # number of non-zero variables = 16
 cv_new_res
@@ -53,6 +58,7 @@ grid <- expand.grid(.fL = c(0), .usekernel = c(FALSE))
 model <- train(diagnosis ~ ., 
                data = train, 
                trControl = train_control, 
+               method = "glm",
                family = "binomial",
                metric = "ROC")
 # predict on the test data
@@ -71,6 +77,7 @@ roc.pred = ifelse(pred == "B", 0, 1)
 roc.val = pROC::roc(response = roc.response, predictor = roc.pred)
 roc.val$auc # AUC = 0.9597
 roc.val$sensitivities; roc.val$specificities
+
 ```
 
 By contrast, the full model uses all 30 predictors and returns an AUC of 0.9597.

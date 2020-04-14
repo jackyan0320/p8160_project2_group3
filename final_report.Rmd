@@ -6,6 +6,12 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(caret)
+library(pROC)
+
+load(file.path(getwd(), "report results.RData"))
 ```
 
 # Introduction
@@ -144,5 +150,12 @@ Step 4. Run a coordinate-wise descendent algorithm to optimize the function defi
 
 ## Results
 
+This optimal model was estimated using the above steps in combination with 5-fold cross-validation. We use the AUC to assess predictive performance, which in this case is equal to 0.9396 with $\lambda=1.51$.
 
+We compare this to the "full model". The full model in this case is a standard logistic regression that uses all 30 covariates as model predictors and is trained using 5-fold cross-validation. The AUC of the full model is 0.9253. However, this model does not always converge.
+
+
+## Conclusions
+
+There are several benefits to using a Newton-Raphson and pathwise coordinate-wise optimization approach to this classification problem. First, the predictive performance is high and favorable compared to a full standard logistic regression model. Secondly, without insuring a descent algorithm, the model does not always converge which indicates poorly fitting observations despite an overall appealing AUC. 
 
