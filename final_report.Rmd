@@ -1,11 +1,11 @@
 ---
 title: "Breast Cancer Diagnosis using Optimization"
-author: "Margaret Gacheru, Alyssa Vanderbeek, Jack Yan, Mengyu Zhang"
+author: "Margaret Gacheru (mg3861), Alyssa Vanderbeek (amv2187), Jack Yan (xy2395), Mengyu Zhang (mz2777)"
 output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
 
 library(tidyverse)
 library(caret)
@@ -150,12 +150,341 @@ Step 4. Run a coordinate-wise descendent algorithm to optimize the function defi
 
 ## Results
 
-This optimal model was estimated using the above steps in combination with 5-fold cross-validation. We use the AUC to assess predictive performance, which in this case is equal to 0.9396 with $\lambda=1.51$.
+This optimal model was estimated using the above steps in combination with 5-fold cross-validation. To find the optimal value of $\lambda$, we fit the model for a range of values between 0.01 and 54.5 (equal to -4 to 4 on the log scale, Figures 1 and 2). The optimal $\lambda$ was found to be 1.51 ($log(\lambda) = 0.41$). Note that at this value that we see the path of solutions begin to diverge (Figure 1). The model with this $\lambda=1.51$ contains 16 predictors, from the 30 original covariates in the dataset (Table 1). We use the AUC to assess predictive performance, which in this case is equal to 0.9946 (Figure 2).
 
-We compare this to the "full model". The full model in this case is a standard logistic regression that uses all 30 covariates as model predictors and is trained using 5-fold cross-validation. The AUC of the full model is 0.9253. However, this model does not always converge.
+We compare this to the "full model", which is a standard logistic model estimated with Newton-Raphson that uses all 30 covariates in the dataset. The model is also trained using 5-fold cross-validation. Its AUC is 0.9394. 
+
+
+```{r, eval = TRUE, echo = FALSE}
+optimal[which(optimal != 0)] %>%
+  as.data.frame() %>%
+  knitr::kable(col.names = "Optimal model coefficients",
+               caption = "Coefficient estimates for the 16 covariates in the optimal model, selected by LASSO and using pathwise coordinate-wise optimization")
+
+
+# plot a path of solutions
+path_sol %>%
+  pivot_longer(
+    3:32,
+    names_to = "measures",
+    values_to = "values"
+  ) %>% 
+  ggplot(aes(x = log(lambdas), y = values, group = measures, color = measures)) +
+  geom_line() + 
+  geom_vline(xintercept = log(best_lambda), linetype = 2) +
+  theme_bw() +
+  ggtitle("Figure 1: A path of solutions with a sequence of descending lambda's") +
+  xlab("log(Lambda) in descending order") + 
+  ylab("Values") +
+  theme(legend.position = "none", 
+        legend.text = element_text(size = 6)) + 
+  scale_x_reverse()
+
+
+
+cv_res %>% 
+    ggplot(aes(x = log(lambdas), y=cv_AUC)) + 
+    geom_errorbar(aes(ymin = cv_AUC - cv_se, ymax = cv_AUC + cv_se),
+                  colour = 1) +
+    geom_line() +
+    geom_point(size = 0.8, colour = 4) +
+    ggtitle("Figure 2: LASSO-logistic regression by 5 fold cross validation to find the optimal model")+
+    xlab("log(Lambda)") + ylab("AUC") +
+    geom_vline(xintercept = log(best_lambda),col=3,lty=3) +
+    annotate("text", log(best_lambda), 1, label = paste("best log(lambda) = ", round(log(best_lambda), 3), sep = "")) + 
+  theme_bw()
+```
 
 
 ## Conclusions
 
-There are several benefits to using a Newton-Raphson and pathwise coordinate-wise optimization approach to this classification problem. First, the predictive performance is high and favorable compared to a full standard logistic regression model. Secondly, without insuring a descent algorithm, the model does not always converge which indicates poorly fitting observations despite an overall appealing AUC. 
+The goal of this project was to develop a model to predict whether a breast tissue sample was benign or malignant cancer. We estimated both an optimal model using LASSO variable selection and pathwise coordinate-wise optimization, and compare this to a logistic model using all available covariates estimated from a Newton-Raphson algorithm.
+
+There are several benefits to using LASSO selection and pathwise coordinate-wise optimization approach to this classification problem. First, the predictive performance is high and favorable compared to a full logistic regression model (AUC of 0.9946 vs. 0.9394). Secondly, the Newton-Raphson estimates for the full model were highly dependent on the chosen starting value. This makes it difficult to determine what the global maximum is, and can therefore affect the accuracy of the estimates.  Finally, the optimal has the advantage of parsimony. 
+
+In sum, we found that using LASSO variable selection and pathwise coordinate-wise optimization algorithm for model estimation produced a highly effective prediction model for diagnosis of cancer from breast tissue images.
+
+
+## Appendix
+
+```{r data}
+breast_cancer <- data.frame(read_csv("breast-cancer.csv")[,-33])
+
+cancer = breast_cancer %>% 
+  mutate(diagnosis = recode(diagnosis, "M" = 1, "B" = 0))
+cancer_ls = list(x = cancer[,3:32], y = cancer$diagnosis)
+x = sapply(cancer_ls$x, function(x) as.numeric(unlist(x)))
+cancer_ls = list(x = x, y = cancer$diagnosis)
+```
+
+
+
+```{r loglikelyhood}
+
+logisticstuff <- function(dat, betavec){
+  x<- dat$x
+  xm <- cbind(rep(1, nrow(x)), scale(x)) # standardize the data
+  u <- xm %*% betavec
+  expu <- exp(u)
+  j <- 1
+  loglik_temp <- matrix()
+  p <- matrix()
+  
+  for(j in 1:nrow(xm)){
+    loglik_temp[j] <- ifelse(u[j] > 10, 
+                             sum(dat$y[j] * u[j]  - u[j]), 
+                             sum(dat$y[j] * u[j]  - log(1 + expu[j])))
+    p[j] <- ifelse(u[j] > 10, 1, expu[j] / (1 + expu[j]))
+  j <- j+1
+  }
+ 
+  loglik <- sum(loglik_temp)
+  grad <- matrix(colSums(xm * as.vector(dat$y - p))) # gradient at betavec
+  Hess <- 0
+  i = 1 
+  for (i in 1:nrow(xm)) {
+    tt <- xm[i,]
+    dd <- t(tt)
+    Hess <- Hess - tt %*% dd * p[i] * (1 - p[i])
+    i <- i + 1
+  }
+  return(list(loglik = loglik, grad = grad, Hess = Hess))
+}
+```
+
+
+```{r modified}
+
+NewtonRaphson <- function(dat, func, start, tol=1e-10, maxiter = 20000) {
+  i <- 0
+  cur <- start
+  stuff <- func(dat, cur)
+  res <- c(0, stuff$loglik, cur)
+  prevloglik <- -Inf      # To make sure it iterates
+  while(i < maxiter && abs(stuff$loglik - prevloglik) > tol) {
+    i <- i + 1
+    prevloglik <- stuff$loglik
+    prev <- cur
+    cur <- prev - ginv(stuff$Hess, 2.34406e-18) %*% stuff$grad
+    prevstuff <- stuff
+    stuff <- func(dat, cur)        # log-lik, gradient, Hessian
+    gamma <- 0.01
+    
+    while(max(eigen(stuff$Hess)$value)>0){
+      stuff$Hess = stuff$Hess - diag(31) * gamma
+      gamma <- gamma + 0.01
+    }
+    
+    if (stuff$loglik > prevloglik)
+    {
+        res <- rbind(res, c(i, stuff$loglik, cur))# Add current values to results matrix
+    } else 
+    {
+      lambda <- 1
+      while (stuff$loglik < prevloglik) {
+        lambda <- lambda / 2 # step-halving
+        cur <- prev - lambda * ginv(prevstuff$Hess, 2.34406e-18) %*% prevstuff$grad
+        stuff <- func(dat, cur)        # log-lik, gradient, Hessian
+      }
+        res <- rbind(res, c(i, stuff$loglik, cur))# Add current values to results matrix
+    }
+  }
+  return(res)
+}
+
+```
+
+
+```{r}
+NewRes <- NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(0, 31))
+NewRes
+#res1 = NewtonRaphson(dat = cancer_ls, func = logisticstuff, start = rep(1, 31))
+
+
+glm(diagnosis ~ ., family = binomial("logit"), data  = cancer[, -1], start = rep(0, 31))
+
+check <- tail(NewRes)
+check
+```
+
+
+
+
+
+```{r coordinate-wise logistic lasso}
+
+Sfunc <- function(beta,lambda) {
+
+  if ((abs(beta)-lambda) > 0)
+  {
+    return (sign(beta) * (abs(beta)-lambda))
+    }
+  else {
+    return (0)
+    }
+}
+
+
+coordlasso <- function(lambda, data_ls, start, tol=1e-10, maxiter = 2000){
+  x<- data_ls$x
+  xm <- cbind(rep(1, nrow(x)), scale(x)) # standardize the data
+  i <- 0 
+  pp <- length(start)
+  n <- length(data_ls$y)
+  betavec <- start
+  loglik <- 0
+  res <- c(0, loglik, betavec)
+  prevloglik <- -Inf # To make sure it iterates 
+  while (i < maxiter && abs(loglik - prevloglik) > tol && loglik < Inf) {
+    i <- i + 1 
+    prevloglik <- loglik
+    for (j in 1:pp) {
+      u <- xm %*% betavec
+      expu <- exp(u) 
+      prob <- expu / (expu + 1)
+      w <- prob * (1 - prob) # weights
+      # avoid coeffcients diverging in order to achieve fitted  probabilities of 0 or 1.
+      w <- ifelse(abs(w-0) < 1e-5, 1e-5, w)
+      z <- u + (data_ls$y - prob) / w
+      # calculate noj
+      z_j <- xm[,-j] %*% betavec[-j]
+      betavec[j] <- Sfunc(sum(w * (xm[,j]) * (z - z_j)), lambda) / (sum(w * xm[,j] * xm[,j]))
+    }
+    loglik <- sum(w * (z - xm %*% betavec)^2) / (2 * n) + lambda * sum(abs(betavec))
+    res <- rbind(res, c(i, loglik, betavec))}  
+  return(res)
+}
+```
+
+
+```{r}
+CorRes <- coordlasso(lambda = 0.8, cancer_ls, start = rep(0, 31) ,maxiter = 2000)
+CorRes
+
+#logmod <- glmnet(cancer_ls$x, y=cancer_ls$y, alpha=1, family="binomial",lambda = 0.8)
+#coef.glmnet(logmod)
+```
+
+
+```{r path of solution}
+path <- function(data_ls,lambdas){
+  start <- rep(0, 31)
+  betas <- NULL
+  for (x in 1:length(lambdas)) {
+  coor_result <- coordlasso(lambda = lambdas[x],
+                            data_ls = data_ls,
+                            start= start, 
+                            maxiter = 2000)
+  curbeta <- coor_result[nrow(coor_result),3:dim(coor_result)[2]]
+  start <- curbeta
+  betas <- rbind(betas,c(curbeta))
+  }
+  return(data.frame(cbind(lambdas,betas)))
+}
+
+path_sol <- path(cancer_ls,lambdas = exp(seq(4,-4, length=30))) # 5 min 
+colnames(path_sol) <- c("lambdas","intercept", colnames(cancer_ls$x))
+
+```
+
+
+
+```{r}
+# data manipulaiton
+data_ma <- function(data){
+  data_ls = list(x = data[,3:32], y = data$diagnosis)
+  x = sapply(data_ls$x, function(x) as.numeric(unlist(x)))
+  data_ls = list(x = x, y = data$diagnosis)
+  return(data_ls)
+}
+
+#Randomly shuffle the data
+
+cv <- function(org_data, lambdas, K){ #original data
+  org_data <- org_data[sample(nrow(org_data)),]
+  #Create K equally size folds
+  folds <- cut(seq(1,nrow(org_data)),breaks = K,labels = FALSE)
+  cv_AUC <- vector()
+  cv_se <- vector()
+  #Perform 10 fold cross validation
+  for (j in 1:length(lambdas)) {
+  cv_errors <- vector()
+  for(i in 1:K){
+    start <- rep(0, 31)
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds == i, arr.ind = TRUE)
+    testData <- data_ma(org_data[testIndexes, ])
+    xt <- cbind(rep(1, nrow(testData$x)), scale(testData$x)) # standardize the data
+    testData <- list(x = xt, y = testData$y)
+
+    trainData <- data_ma(org_data[-testIndexes, ])
+    coor_result <- coordlasso(lambda = lambdas[j],
+                              data_ls = trainData,
+                              start= start)
+    curbeta <- coor_result[nrow(coor_result),3:dim(coor_result)[2]]
+    u <- as.matrix(testData$x) %*% curbeta
+    expu <- exp(u) 
+    prob <- expu / (1 + expu) 
+    cv_errors[i] = AUC(prob, testData$y) #MSE
+  }
+  cv_AUC[j] <- mean(cv_errors)
+  cv_se[j] <- sqrt(var(cv_errors)/K)
+  }
+  return(cbind(lambdas, cv_AUC, cv_se))
+}
+
+set.seed(123)
+cv_res <- cv(org_data = cancer, lambdas = exp(seq(4,-4, length=30)), K = 5) #15 min
+
+```
+
+
+```{r}
+best_lambda <- cv_res[which.max(cv_res[,2]),1]
+cv_res <- data.frame(cv_res)
+cv_res %>% 
+  filter(lambdas == best_lambda)
+
+
+```
+
+```{r}
+cv_New <- function(org_data, func, K){ #original data
+  org_data <- org_data[sample(nrow(org_data)),]
+  #Create K equally size folds
+  folds <- cut(seq(1,nrow(org_data)),breaks = K,labels = FALSE)
+  cv_errors <- vector()
+  #Perform 10 fold cross validation
+  for(i in 1:K){
+    start <- rep(0, 31)
+    #Segement your data by fold using the which() function 
+    testIndexes <- which(folds == i, arr.ind = TRUE)
+    testData <- data_ma(org_data[testIndexes, ])
+    xt <- cbind(rep(1, nrow(testData$x)), scale(testData$x)) # standardize the data
+    testData <- list(x = xt, y = testData$y)
+    trainData <- data_ma(org_data[-testIndexes, ])
+    
+    New_result <- NewtonRaphson(dat = trainData,
+                                 func = func,
+                                 start= start)
+    curbeta <- New_result[nrow(New_result),3:dim(New_result)[2]]
+    u <- as.matrix(testData$x) %*% curbeta
+    prob <- vector()
+    for(j in 1:nrow(testData$x)){
+    prob[j] <- ifelse(u[j] > 10, 1, exp(u[j]) / (1 + exp(u[j])))
+    j <- j+1
+    }
+    
+    cv_errors[i] = AUC(prob, testData$y) #AUC
+  }
+  cv_error <- mean(cv_errors)
+  cv_se <- sqrt(var(cv_errors)/K)
+  
+  return(cbind(cv_error, cv_se))
+}
+
+set.seed(123)
+cv_new_res <- cv_New(org_data = cancer, func = logisticstuff, K =5)
+cv_new_res
+```
 
